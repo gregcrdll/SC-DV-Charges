@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DV Charge Classifier</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 1em; background: #f0f4f8; color: #222; }
+    label, select, button { display: block; margin: 0.5em 0; }
+    #resultBox { margin-top: 1em; padding: 1em; background: #fff; border-left: 5px solid #2196f3; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    select, button { padding: 0.4em; border-radius: 5px; border: 1px solid #ccc; width: 100%; max-width: 400px; }
+    button { background-color: #007bff; color: white; border: none; cursor: pointer; margin-top: 1em; }
+    button:hover { background-color: #0056b3; }
+    #voiceBtn { background-color: #28a745; margin-top: 1em; }
+    #voiceBtn:hover { background-color: #218838; }
+    @media (max-width: 600px) {
+      select, button { width: 100%; font-size: 1em; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Domestic Violence Charge Classifier</h1>
+  <div id="officerModeFields">
+    <label for="household">Victim's Relationship (Household Member Type):</label>
+    <select id="household">
+      <option value="none">-- Select --</option>
+      <option value="spouse">Spouse or ex-spouse</option>
+      <option value="cohabitant">Cohabitant</option>
+      <option value="child">Child or step-child</option>
+      <option value="parent">Parent or step-parent</option>
+      <option value="sharedChild">Co-parent (share a child in common)</option>
+    </select>
+
+    <label for="offender">Offender's Relationship to Victim:</label>
+    <select id="offender">
+      <option value="none">-- Select --</option>
+      <option value="spouse">Spouse or ex-spouse</option>
+      <option value="cohabitant">Cohabitant</option>
+      <option value="child">Child or step-child</option>
+      <option value="parent">Parent or step-parent</option>
+      <option value="sharedChild">Co-parent (share a child in common)</option>
+    </select>
+
+    <label for="voiceInput">Or Speak Incident:</label>
+    <button id="voiceBtn" onclick="startVoiceInput()">🎤 Speak Now</button>
+    <p id="voiceOutput"></p>
+
+    <label for="contact">Physical Contact Level:</label>
+    <select id="contact">
+      <option value="none">None</option>
+      <option value="minor">Minor (push, slap)</option>
+      <option value="major">Major (choke, strike with object)</option>
+    </select>
+
+    <label for="threat">Threat Severity:</label>
+    <select id="threat">
+      <option value="none">None</option>
+      <option value="low">Low (verbal insult)</option>
+      <option value="moderate">Moderate (threat to hit)</option>
+      <option value="high">High (threat to kill/shoot)</option>
+    </select>
+
+    <label for="injury">Injury Level:</label>
+    <select id="injury">
+      <option value="none">None</option>
+      <option value="moderate">Moderate (broken bone, concussion)</option>
+      <option value="great">Great Bodily Injury (long-term or life threatening)</option>
+    </select>
+
+    <label for="aggravators">Aggravating Factors (select all that apply):</label>
+    <select id="aggravators" multiple>
+      <option value="weapon">Deadly Weapon Used</option>
+      <option value="minor">Minor Present</option>
+      <option value="protection">Protection Order in Place</option>
+      <option value="pregnant">Victim Pregnant</option>
+      <option value="priorDV1">1 Prior DV Conviction</option>
+      <option value="priorDV2">2+ Prior DV Convictions</option>
+      <option value="indifference">Extreme Indifference</option>
+    </select>
+
+    <button onclick="classifyFromOfficerMode()">Classify DV Charge</button>
+  </div>
+
+  <div id="resultBox" style="display:none">
+    <h2>Charge Result:</h2>
+    <p id="result"></p>
+    <div id="explanation"></div>
+  </div>
+
+  <script>
+    function startVoiceInput() {
+      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      recognition.lang = 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.start();
+
+      recognition.onresult = function(event) {
+        const transcript = event.results[0][0].transcript.toLowerCase();
+        document.getElementById("voiceOutput").innerText = `You said: "${transcript}"`;
+
+        if (transcript.includes("spouse")) {
+          document.getElementById("household").value = "spouse";
+          document.getElementById("offender").value = "spouse";
+        } else if (transcript.includes("cohabitant")) {
+          document.getElementById("household").value = "cohabitant";
+          document.getElementById("offender").value = "cohabitant";
+        } else if (transcript.includes("child")) {
+          document.getElementById("household").value = "child";
+          document.getElementById("offender").value = "parent";
+        } else if (transcript.includes("parent")) {
+          document.getElementById("household").value = "parent";
+          document.getElementById("offender").value = "child";
+        } else if (transcript.includes("share a child")) {
+          document.getElementById("household").value = "sharedChild";
+          document.getElementById("offender").value = "sharedChild";
+        }
+
+        if (transcript.includes("push") || transcript.includes("slap")) {
+          document.getElementById("contact").value = "minor";
+        } else if (transcript.includes("choke") || transcript.includes("hit with")) {
+          document.getElementById("contact").value = "major";
+        }
+
+        if (transcript.includes("threaten to shoot") || transcript.includes("kill")) {
+          document.getElementById("threat").value = "high";
+        } else if (transcript.includes("threaten")) {
+          document.getElementById("threat").value = "moderate";
+        }
+
+        if (transcript.includes("broken bone") || transcript.includes("fracture")) {
+          document.getElementById("injury").value = "moderate";
+        } else if (transcript.includes("serious injury") || transcript.includes("great injury")) {
+          document.getElementById("injury").value = "great";
+        }
+
+        if (transcript.includes("pregnant")) addAggravator("pregnant");
+        if (transcript.includes("child present") || transcript.includes("minor present")) addAggravator("minor");
+        if (transcript.includes("weapon")) addAggravator("weapon");
+        if (transcript.includes("protection order")) addAggravator("protection");
+        if (transcript.includes("prior dv") || transcript.includes("past dv")) addAggravator("priorDV1");
+        if (transcript.includes("two prior") || transcript.includes("multiple prior")) addAggravator("priorDV2");
+        if (transcript.includes("extreme indifference")) addAggravator("indifference");
+      };
+
+      recognition.onerror = function(event) {
+        document.getElementById("voiceOutput").innerText = "Voice input error: " + event.error;
+      };
+    }
+
+    function addAggravator(value) {
+      const options = document.getElementById("aggravators").options;
+      for (let i = 0; i < options.length; i++) {
+        if (options[i].value === value) {
+          options[i].selected = true;
+        }
+      }
+    }
+  </script>
+</body>
+</html>
